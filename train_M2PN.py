@@ -25,20 +25,21 @@ from torchstat import stat
 # from SENet_net import PReNet_LSTM
 # from SENet_net2 import PReNet_LSTM
 # from Dense_networks import PReNet_LSTM
-from m2pn import M2PN
-# from fcanet_biLSTM import PReNet_LSTM
+# from m2pn import M2PN
+# from LM2PN import LM2PN
+from fcanet_biLSTM import biM2PN
 # from fcanet_pixelshuffle import PReNet_LSTM
 # from fcanetLSTM import PReNet_LSTM
 
-parser = argparse.ArgumentParser(description="PReNet_train")
+parser = argparse.ArgumentParser(description="train_M2PN")
 parser.add_argument("--preprocess", type=bool, default=False, help='run prepare_data or not')
-parser.add_argument("--batch_size", type=int, default=18, help="Training batch size")
+parser.add_argument("--batch_size", type=int, default=24, help="Training batch size")
 parser.add_argument("--epochs", type=int, default=300, help="Number of training epochs")
 parser.add_argument("--milestone", type=int, default=[30,50,80], help="When to decay learning rate")
 parser.add_argument("--lr", type=float, default=1e-3, help="initial learning rate")
-parser.add_argument("--save_path", type=str, default="logs/log/fcaDCT16/rainHwithtestdatarate1e-3", help='path to save models and log files')
+parser.add_argument("--save_path", type=str, default="logs/log/bifcaDCT16", help='path to save models and log files')
 parser.add_argument("--save_freq",type=int,default=1,help='save intermediate model')
-parser.add_argument("--data_path",type=str, default="datasets/train/RainTrainH",help='path to training data')
+parser.add_argument("--data_path",type=str, default="datasets/train/RainTrainL",help='path to training data')
 parser.add_argument("--use_gpu", type=bool, default=True, help='use GPU or not')
 parser.add_argument("--gpu_id", type=str, default="0", help='GPU id')
 parser.add_argument("--recurrent_iter", type=int, default=6, help='number of recursive stages')
@@ -56,7 +57,9 @@ def main():
     print("# of training samples: %d\n" % int(len(dataset_train)))
 
     # Build model
-    model = M2PN(recurrent_iter=opt.recurrent_iter, use_GPU=opt.use_gpu)
+    # model = M2PN(recurrent_iter=opt.recurrent_iter, use_GPU=opt.use_gpu)
+    # model = LM2PN(recurrent_iter=opt.recurrent_iter, use_GPU=opt.use_gpu)
+    model = biM2PN(recurrent_iter=opt.recurrent_iter, use_GPU=opt.use_gpu)
     print_network(model)
 
 
@@ -86,7 +89,12 @@ def main():
     initial_epoch = findLastCheckpoint(save_dir=opt.save_path)
     if initial_epoch > 0:
         print('resuming by loading epoch %d' % initial_epoch)
-        model.load_state_dict(torch.load(os.path.join(opt.save_path, 'net_epoch%d.pth' % initial_epoch)), False)
+        # model.load_state_dict(torch.load(os.path.join(opt.save_path, 'net_epoch%d.pth' % initial_epoch)), False)
+        checkpoint = torch.load(os.path.join(opt.save_path, 'net_epoch%d.pth' % initial_epoch))
+        model.load_state_dict(checkpoint['state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
+        scheduler.load_state_dict(checkpoint['scheduler'])
+        initial_epoch = checkpoint['epoch']
 
     # start training
     # workbook = Workbook()
@@ -160,9 +168,14 @@ def main():
         # writer.add_image('dctderaining image', dct_derain, epoch + 1)尝试保留特征图暂时失败
 
         # save model
-        torch.save(model.state_dict(), os.path.join(opt.save_path, 'net_latest.pth'))
+        # torch.save(model.state_dict(), os.path.join(opt.save_path, 'net_latest.pth'))
+        torch.save({'epoch': epoch, 'state_dict': model.state_dict(),
+                    'optimizer': optimizer.state_dict(), 'scheduler': scheduler.state_dict()},
+                   os.path.join(opt.save_path, 'net_latest.pth'))
         if epoch % opt.save_freq == 0:
-            torch.save(model.state_dict(), os.path.join(opt.save_path, 'net_epoch%d.pth' % (epoch+1)))
+            torch.save({'epoch': epoch, 'state_dict': model.state_dict(),
+                    'optimizer': optimizer.state_dict(), 'scheduler': scheduler.state_dict()},
+                       os.path.join(opt.save_path, 'net_epoch%d.pth' % (epoch+1)))
 
         SSIM_average = sum(SSIM_list) / len(SSIM_list)
         psnr_average = sum(psnr_list) / len(psnr_list)
